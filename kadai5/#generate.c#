@@ -1,4 +1,4 @@
-#include <stdio.h>
+include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 int idents_num;
@@ -518,7 +518,7 @@ void stack_ident(Node* n) {
                 printf("not valuable index\n");
                 exit(0);
             }
-            printf("#index is indent\n");
+            printf("#index isindent\n");
             printf("    addi $t7,$t0,%d\n", tmp->offset);
             printf("    lw $t8,0($t7)\n");
             printf("    nop\n");
@@ -944,7 +944,7 @@ void gen_code(Node *n) {
     
     switch (n->type) {
     case IDENT_AST:
-        if (defining == 1) {//array のときも実行されて,offsetがずれてしまうが,decl_stmtかつarrayのとき--する
+        if (defining == 1) {
             define_ident(n);
         }
        

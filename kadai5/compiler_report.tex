@@ -1,0 +1,645 @@
+% ファイル先頭から\begin{document}までの内容（プレアンブル）については，
+% 基本的に { } の中を書き換えるだけでよい．
+\documentclass[autodetect-engine,dvi=dvipdfmx,ja=standard,
+               a4j,11pt]{bxjsarticle}
+
+%%======== プレアンブル ============================================%%
+% 用紙設定：指示があれば，適切な余白に設定しなおす
+\RequirePackage{geometry}
+\geometry{reset,paperwidth=210truemm,paperheight=297truemm}
+\geometry{hmargin=25truemm,top=20truemm,bottom=25truemm,footskip=10truemm,headheight=0mm}
+%\geometry{showframe} % 本文の"枠"を確認したければ，コメントアウト
+
+% 設定：図の挿入
+% http://www.edu.cs.okayama-u.ac.jp/info/tool_guide/tex.html#graphicx
+\usepackage{graphicx}
+
+% 設定：ソースコードの挿入
+% http://www.edu.cs.okayama-u.ac.jp/info/tool_guide/tex.html#fancyvrb
+\usepackage{fancyvrb}
+\renewcommand{\theFancyVerbLine}{\texttt{\footnotesize{\arabic{FancyVerbLine}:}}}
+
+%%======== レポートタイトル等 ======================================%%
+% ToDo: 提出要領に従って，適切なタイトル・サブタイトルを設定する
+\title{情報工学実験C \\
+       |\Large{コンパイラレポート}|}
+
+% ToDo: 自分自身の氏名と学生番号に書き換える
+\author{氏名: 中畑 凌成 (Nakahata, Ryosei) \\
+        学生番号: 09B23587}
+
+% ToDo: レポート課題等の指示に従って適切に書き換える
+\date{出題日: 2025年12月xx日 \\
+      提出日: 2026年02月xx日 \\
+      締切日: 2026年02月06日 \\}  % 注：最後の\\は不要に見えるが必要．
+
+
+%%======== 本文 ====================================================%%
+\begin{document}
+\maketitle
+% 目次つきの表紙ページにする場合はコメントを外す
+%{\footnotesize \tableofcontents \newpage}
+
+%% 本文は以下に書く．課題に応じて適切な章立てを構成すること．
+%% 章＝\section，節＝\subsection，項＝\subsubsection である．
+
+%--------------------------------------------------------------------%
+%\section{概要} \label{sec:abstract}
+
+
+%--------------------------------------------------------------------%
+%\section{プログラムの作成方針}
+\section{実験の目的}
+コンパイラを作成することを実験の目的とする.
+ここでこのコンパイラはコードをアセンブリに変換して,最終課題
+を実行することが出来るということを目標とする.
+また,コンパイラ作成において\verb|lex|と\verb|yacc|を使用する.
+
+\section{最終的に作成した言語の定義}
+
+\verb|yacc|で定義したルールを記載する.
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+
+my
+:program
+;
+
+program //プログラム
+:declarations statements 
+;
+
+statements //文集合
+:statement statements
+|statement 
+;
+
+statement //文
+:assignment_stmt
+|loop_stmt 
+|cond_stmt 
+;
+
+assignment_stmt //代入分
+:idents ASSIGN expression SEMIC {
+  $$ = build_node2_Assign(ASSIGNMENT_STMT_AST,$1, $3,-1);
+ }
+|IDENT L_BRACKET NUMBER R_BRACKET ASSIGN expression SEMIC  {$$ = build_node2_Assign(ASSIGNMENT_STMT_AST,build_node0(IDENT_AST,$1,$3,""),$6,1);}
+|IDENT L_BRACKET IDENT R_BRACKET ASSIGN expression SEMIC {$$ = build_node2_Assign(ASSIGNMENT_STMT_AST,build_node0(IDENT_AST,$1,0,$3),$6,2);} //変数の添え字 mikan
+|IDENT L_BRACKET IDENT R_BRACKET L_BRACKET IDENT R_BRACKET ASSIGN expression SEMIC {$$ = build_node3_Assign(ASSIGNMENT_STMT_AST,build_node0(IDENT_AST,$1,0,""),build_node2(INDEX_EXPRESSION_AST,build_node0(IDENT_AST,$3,-1,""),build_node0(IDENT_AST,$6,-1,"")),$9,1);}
+|IDENT L_BRACKET NUMBER R_BRACKET L_BRACKET NUMBER R_BRACKET ASSIGN expression SEMIC {$$ = build_node3_Assign(ASSIGNMENT_STMT_AST,build_node0(IDENT_AST,$1,0,""),build_node2(INDEX_EXPRESSION_AST,build_node0(NUMBER_AST,"",$3,""),build_node0(NUMBER_AST,"",$6,"")),$9,1);}
+|IDENT L_BRACKET IDENT R_BRACKET L_BRACKET NUMBER R_BRACKET ASSIGN expression SEMIC {$$ = build_node3_Assign(ASSIGNMENT_STMT_AST,build_node0(IDENT_AST,$1,0,""),build_node2(INDEX_EXPRESSION_AST,build_node0(IDENT_AST,$3,-1,""),build_node0(NUMBER_AST,"",$6,"")),$9,1);}
+|IDENT L_BRACKET NUMBER R_BRACKET L_BRACKET IDENT R_BRACKET ASSIGN expression SEMIC {$$ = build_node3_Assign(ASSIGNMENT_STMT_AST,build_node0(IDENT_AST,$1,0,""),build_node2(INDEX_EXPRESSION_AST,build_node0(NUMBER_AST,"",$3,""),build_node0(IDENT_AST,$6,-1,"")),$9,1);}
+;
+
+term //項
+:term mul_op factor
+|factor
+;
+
+factor //因子
+:var
+|L_PAREN expression R_PAREN
+;
+
+add_op //加減演算子
+:ADD
+|SUB
+;
+
+mul_op //乗除演算子
+:MUL
+|DIV
+;
+
+var //変数
+:idents {$$=build_node1(VAR_AST,$1);}
+|NUMBER {$$=build_node1(VAR_AST,build_node0(NUMBER_AST,"",$1,""));}
+|IDENT L_BRACKET NUMBER R_BRACKET {$$=build_node1(VAR_AST,build_node0(IDENT_AST,$1,$3,""));}//mikan
+|IDENT L_BRACKET IDENT R_BRACKET {$$=build_node1(VAR_AST,build_node0(IDENT_AST,$1,0,$3));}
+|IDENT L_BRACKET NUMBER R_BRACKET L_BRACKET NUMBER R_BRACKET {$$=build_node1(VAR_AST,build_node0_array2(IDENT_AST,$1,-2,"",build_node2(INDEX_EXPRESSION_AST,build_node0(NUMBER_AST,"",$3,""),build_node0(NUMBER_AST,"",$6,""))));}
+|IDENT L_BRACKET IDENT R_BRACKET L_BRACKET IDENT R_BRACKET {$$=build_node1(VAR_AST,build_node0_array2(IDENT_AST,$1,-2,"",build_node2(INDEX_EXPRESSION_AST,build_node0(IDENT_AST,$3,0,""),build_node0(IDENT_AST,$6,0,""))));}
+|IDENT L_BRACKET IDENT R_BRACKET L_BRACKET NUMBER R_BRACKET {$$=build_node1(VAR_AST,build_node0_array2(IDENT_AST,$1,-2,"",build_node2(INDEX_EXPRESSION_AST,build_node0(IDENT_AST,$3,0,""),build_node0(NUMBER_AST,"",$6,""))));}
+|IDENT L_BRACKET NUMBER R_BRACKET L_BRACKET IDENT R_BRACKET {$$=build_node1(VAR_AST,build_node0_array2(IDENT_AST,$1,-2,"",build_node2(INDEX_EXPRESSION_AST,build_node0(NUMBER,"",$3,""),build_node0(IDENT_AST,$6,0,""))));}
+;
+
+declarations //変数宣言部
+:decl_statement declarations
+|decl_statement
+;
+
+decl_statement //宣言文
+:DEFINE idents SEMIC  {$$ = build_node1_Decl(DECL_STATEMENT_AST,$2,-1);}//-1->define 
+|ARRAY IDENT L_BRACKET NUMBER R_BRACKET SEMIC  {$$ = build_node2_Decl(DECL_STATEMENT_AST,build_node0(IDENT_AST,$2,-1,""),build_node0(NUMBER_AST,"",$4,""),1);}//1->array
+|ARRAY IDENT L_BRACKET NUMBER R_BRACKET L_BRACKET NUMBER R_BRACKET SEMIC  {$$ = build_node3_Decl(DECL_STATEMENT_AST,build_node0(IDENT_AST,$2,-1,""),$4,$7);}//else->array [][n]
+
+idents //複数の識別子
+:IDENT COMMA idents
+|IDENT
+;
+
+expression //算術式
+:expression add_op term
+|term
+;
+
+condition //条件式
+:expression cond_op expression
+;
+
+cond_op //比較演算子
+:EQ
+|GT
+|LT
+|GT ASSIGN
+|LT ASSIGN
+;
+
+loop_stmt //ループ文
+:WHILE L_PAREN condition R_PAREN L_BRACE statements R_BRACE
+;
+
+cond_stmt //条件分岐文
+:IF L_PAREN condition R_PAREN L_BRACE statements R_BRACE
+|IF L_PAREN condition R_PAREN L_BRACE statements R_BRACE ELSE L_BRACE statements  R_BRACE
+;
+
+\end{Verbatim}
+終端記号の意味を明らかにするため,\verb|lex|ファイルの一部を示す.
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+define {return DEFINE;}
+if {return IF;}
+array {return ARRAY;}
+while {return WHILE;}
+else {return ELSE;}
+= {return ASSIGN;}
+; {return SEMIC;}
+[a-zA-Z][a-zA-Z0-9]* {
+ yylval.sp= (char*)malloc(sizeof(char) * yyleng);
+ strncpy(yylval.sp , yytext, yyleng);
+return IDENT;
+}
+[0-9]+ { yylval.ival = atoi(yytext);
+return NUMBER;}
+, {return COMMA;}
+[ \t]+
+"+" {return ADD;}
+"-" {return SUB;}
+"/" {return DIV;}
+"*" {return MUL;}
+"==" {return EQ;}
+"<" {return LT;}
+">" {return GT;}
+"{" {return L_BRACE;}
+"}" {return R_BRACE;}
+"[" {return L_BRACKET;}
+"]" {return R_BRACKET;}
+"(" {return L_PAREN;}
+")" {return R_PAREN;}
+\end{Verbatim}
+
+
+
+\section{定義した言語で受理されるプログラムの例}
+
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+array matrix1[2][2];
+array matrix2[2][2];
+array matrix3[2][2];
+define i;
+define j;
+define k;
+matrix1[0][0] = 1;
+matrix1[0][1] = 2;
+matrix1[1][0] = 3;
+matrix1[1][1] = 4;
+matrix2[0][0] = 5;
+matrix2[0][1] = 6;
+matrix2[1][0] = 7;
+matrix2[1][1] = 8;
+i=0;
+while(i<2){
+    j=0;
+    while(j<2){
+        matrix3[i][j] = 0;
+        j=j+1;
+    }
+    i=i+1;
+}
+i=0;
+while(i<2){
+    j=0;
+    while(j<2){
+        k=0;
+        while(k<2){
+            matrix3[i][j] = matrix3[i][j] + matrix1[i][k] * matrix2[k][j];
+            k=k+1;
+        }
+        j=j+1;
+    }
+    i=i+1;
+}
+\end{Verbatim}
+
+\section{コード生成の概要}
+
+\verb|yacc|ファイルでプログラムが還元された時に,\verb|build_node|が実行されて\verb|AST|木が
+作成される.それを\verb|gen_code|で再帰的にノードを探索をして,コード生成を行った.
+
+\subsection{メモリの使い方}
+データセグメントを$0x10004000$から開始し,テキストセグメントを$0x00001000$から開始させた.
+また,メモリは算術式において計算結果を一時的に確保する役割でスタックメモリを使用した.
+宣言した変数や配列要素はそれぞれ$4$バイトと大きさを定めている.
+
+
+\subsection{レジスタの使い方}
+作成したコンパイラでのレジスタの使用用途を表でまとめる.
+
+\begin{tabular}{|l|r|} \hline
+   レジスタ & 用途  \\ \hline
+   v0 & 計算結果の格納  \\
+   t0 & データセグメントのアドレスの格納   \\
+   t6 & 変数のアドレスの格納\\
+   t7,t8 & 変数の添字の計算\\
+   t1 & スタックに格納して計算する値を格納\\
+   t3,t5 & 計算のため,スタックからロード\\
+   s0,s1 & 条件式の各辺の計算結果を格納\\
+   s2 & 条件式の結果を格納\\\hline
+ \end{tabular}
+
+
+\subsection{算術式のコード生成の方法}
+\verb|EXPRESSION_AST|ノードが最初に現れたら\verb|turn_on_expression|を実行して\verb|expressioning|を$1$にする.
+そして\verb|expressioning|が$1$の間に\verb|IDENT_AST|や\verb|NUMBER_AST|を訪問したら,訪問完了したらその値をスタックに入れていく.
+そして,\verb|EXPRESSION_AST|ノードを訪問完了したら\verb|add_node|,\verb|sub_node|をしてスタックから取り出して計算する.
+また掛け算や割り算を行う\verb|TERM_AST|は\verb|EXPRESSION|よりも木構造的に下の位置に生成されるようになっており,そのノードの子ノードの探索を
+終えて,兄弟ノードを探索する前にスタックに入れていけば,演算子の優先順位を壊さずに計算を行える.
+なお,代入や計算において,演算子を伴わない算術式ではスタックに入れず,直接レジスタに値を入れるようにしている.
+具体的には演算子を含まないならば,計算用の記号表にその値を書き込んで,代入処理のところでその値を参照するようにしている.
+
+
+
+\section{特に工夫した点についての説明}
+
+\subsection{記号表の作成}
+変数や配列を記号表を作成して管理した.\verb|define|や\verb|array|が入力されたら記号表用の構造体に変数名,オフセット,インデックスなどの値を
+記録するようにした.
+具体的に記号表が持つ値を表でまとめる.
+記号表が\verb|index|を持つのは整数の添字のときの効率のためである.
+\begin{tabular}{|l|r|} \hline
+   name & 定義した変数の名前  \\ \hline
+   next & 次のデータへのポインタ  \\
+   offset & データセグメントのオフセット \\
+   index & 配列要素の添字\\
+   ide index & 2次元配列用の添字ノード\\ \hline
+ \end{tabular}
+
+
+\subsection{配列要素の扱い}
+整数の添字の配列要素を扱う際,直接オフセットを記号表から持ってくるようにした.
+整数の添字の配列要素を扱う方法として$2$つあると考える.具体的には今回,プログラムで実装した,直接オフセットを記号表から参照する
+方法と,配列の先頭のアドレスに添字の数だけ加算してアドレスを入手するという方法である.
+前者の方は記号表の項目を増やさなければならないが,新たにアドレスを計算する過程がなくなるのでインストラクション数を
+少なくすることが出来ると考える.
+
+\section{コンパイラのソースプログラムのある場所}
+
+作成したプログラムを保存したディレクトリパスは以下である.
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+/home/users/ecs/09B23587/exp-c/comp/compiler/kadai5
+
+\end{Verbatim}
+
+\section{最終課題を解くために(定義した言語で)書いたプログラム}
+
+\subsection{課題1}
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+define i; 
+define sum; 
+sum = 0; 
+i = 1; 
+while(i < 11) { 
+  sum = sum + i; 
+  i = i + 1; 
+}
+\end{Verbatim}
+
+\subsection{課題2}
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+define i; 
+define fact; 
+fact = 1; 
+i = 1; 
+while(i < 6) { 
+  fact = fact * i; 
+  i = i + 1; 
+}                 
+\end{Verbatim}
+
+\subsection{課題3}
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+define fizz; 
+define buzz; 
+define fizzbuzz; 
+define others; 
+define i; 
+fizz = 0;  
+buzz = 0; 
+fizzbuzz = 0;  
+others = 0; 
+i = 1; 
+while(i < 31){ 
+  if ((i / 15) * 15 == i){ 
+    fizzbuzz = fizzbuzz + 1; 
+  } else { 
+    if ((i / 3) * 3 == i){ 
+      fizz = fizz + 1; 
+    } else { 
+      if ((i / 5) * 5 == i){ 
+        buzz = buzz + 1; 
+      } else { 
+        others = others + 1; 
+      } 
+    } 
+  } 
+  i = i + 1; 
+}
+\end{Verbatim}
+
+\subsection{課題4}
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+define N; 
+define i; 
+define j; 
+define k; 
+array a[1001]; 
+N = 1000; 
+i = 1; 
+while (i <= N) { 
+  a[i] = 1; 
+  i = i + 1; 
+} 
+i = 2; 
+while( i <= N/2) { 
+  j = 2; 
+  while(j <= N/i){ 
+    k = i * j; 
+    a[k] = 0; 
+    j = j + 1; 
+  } 
+  i = i + 1; 
+}
+\end{Verbatim}
+
+\subsection{課題5}
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+array matrix1[2][2];
+array matrix2[2][2];
+array matrix3[2][2];
+define i;
+define j;
+define k;
+matrix1[0][0] = 1;
+matrix1[0][1] = 2;
+matrix1[1][0] = 3;
+matrix1[1][1] = 4;
+matrix2[0][0] = 5;
+matrix2[0][1] = 6;
+matrix2[1][0] = 7;
+matrix2[1][1] = 8;
+i=0;
+while(i<2){
+    j=0;
+    while(j<2){
+        matrix3[i][j] = 0;
+        j=j+1;
+    }
+    i=i+1;
+}
+i=0;
+while(i<2){
+    j=0;
+    while(j<2){
+        k=0;
+        while(k<2){
+            matrix3[i][j] = matrix3[i][j] + matrix1[i][k] * matrix2[k][j];
+            k=k+1;
+        }
+        j=j+1;
+    }
+    i=i+1;
+}
+\end{Verbatim}
+
+
+
+\section{それをコンパイルしてmapsで実行したときの実行結果とステップ数}
+
+\subsection{課題1}
+メモリは以下のようになった.
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+0x10004000 (268451840) = 0x0000000b (11)
+0x10004004 (268451844) = 0x00000037 (55)
+0x10004008 (268451848) = 0x00000000 (0)
+0x1000400c (268451852) = 0x00000000 (0)
+0x10004010 (268451856) = 0x00000000 (0)
+0x10004014 (268451860) = 0x00000000 (0)
+0x10004018 (268451864) = 0x00000000 (0)
+0x1000401c (268451868) = 0x00000000 (0)
+\end{Verbatim}
+インストラクション数は$408$になった.
+
+\subsection{課題2}
+メモリは以下のようになった.
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+0x10004000 (268451840) = 0x00000006 (6)
+0x10004004 (268451844) = 0x00000078 (120)
+0x10004008 (268451848) = 0x00000000 (0)
+0x1000400c (268451852) = 0x00000000 (0)
+0x10004010 (268451856) = 0x00000000 (0)
+0x10004014 (268451860) = 0x00000000 (0)
+
+\end{Verbatim}
+インストラクション数は$233$になった.
+
+
+\subsection{課題3}
+メモリは以下のようになった.
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+0x10004000 (268451840) = 0x00000008 (8)
+0x10004004 (268451844) = 0x00000004 (4)
+0x10004008 (268451848) = 0x00000002 (2)
+0x1000400c (268451852) = 0x00000010 (16)
+0x10004010 (268451856) = 0x0000001f (31)
+0x10004014 (268451860) = 0x00000000 (0)
+
+\end{Verbatim}
+インストラクション数は$3596$になった.
+
+
+\subsection{課題4}
+
+メモリは以下のようになった.(一部省略)
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+10004000: 000003e8 000001f5 00000003 000003e8
+10004010: 00000000 00000001 00000001 00000001
+10004020: 00000000 00000001 00000000 00000001
+10004030: 00000000 00000000 00000000 00000001
+10004040: 00000000 00000001 00000000 00000000
+10004050: 00000000 00000001 00000000 00000001
+10004060: 00000000 00000000 00000000 00000001
+10004080: 00000000 00000001 00000000 00000001
+100040a0: 00000000 00000001 00000000 00000000
+100040b0: 00000000 00000001 00000000 00000001
+100040c0: 00000000 00000000 00000000 00000001
+100040e0: 00000000 00000001 00000000 00000000
+100040f0: 00000000 00000000 00000000 00000001
+10004100: 00000000 00000001 00000000 00000000
+10004110: 00000000 00000000 00000000 00000001
+10004120: 00000000 00000000 00000000 00000001
+10004130: 00000000 00000001 00000000 00000000
+10004140: 00000000 00000000 00000000 00000001
+10004150: 00000000 00000000 00000000 00000001
+10004170: 00000000 00000001 00000000 00000000
+10004190: 00000000 00000001 00000000 00000000
+100041a0: 00000000 00000001 00000000 00000001
+100041b0: 00000000 00000000 00000000 00000001
+100041c0: 00000000 00000001 00000000 00000000
+
+\end{Verbatim}
+
+インストラクション数は$413252$になった.
+
+\subsection{課題5}
+メモリは以下のようになった.
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+
+10004000: 00000001 00000002 00000003 00000004
+10004010: 00000005 00000006 00000007 00000008
+10004020: 00000013 00000016 0000002b 00000032
+10004030: 00000002 00000002 00000002 00000000
+\end{Verbatim}
+インストラクション数は$1519$になった.
+
+\section{考察}
+
+\subsection{再帰関数について}
+今回のプログラムでは\verb|gen_code()|のみを再帰関数にしてノードをたどっていったが,再帰関数を複数作成してノードを探索したほうが簡潔にプログラムを
+かけるのではないかと考える.どの再帰関数を実行しているかという情報があれば,\verb|turn_on_assign|や\verb|turn_on_define|などの関数を作成しなくて
+も済んだと考える.具体的には\verb|turn_on_assign|や\verb|turn_on_define|,\verb|turn_on_expression|などは初めて\verb|assign|や\verb|define|,\verb|expression|
+ノードを訪問したときに,それぞれのフラグを立てることを目的とした関数である.これら最初のノードの下のノードでは\verb|assining|や\verb|defining|,\verb|expressioning|といったフラグが
+立っているので,立っているフラグに応じた処理を行うようにした.
+
+\subsection{expression}
+今回のプログラムでは\[2+3\]や\[2*3\]のような式の場合でも一度スタックに値をそれぞれ格納してからそれを取り出して計算しているが,演算子が$1$つのときはスタックに入れず
+に直接値を保持してそれを計算したほうがインストラクション数を少なく出来ると考える.
+
+\subsection{配列の実装}
+今回,配列を実装するにあたって,配列の添字を\verb|build_node0|を拡張して渡した.しかし,\verb|IDENT_AST|のようにノードを作成して,そのノードが添字の値を持つようにしたほうが,
+拡張性が高かったのではないかと考える.
+
+\subsection{記号表の意義}
+記号表を作成せずに,変数を記号表を使わずにラベル付を駆使して実装する方法もあるが,安全ではない実装であると考える.
+これは変数名が\verb|while|や\verb|if|で使用するラベルと同じ名前になると,同じラベルが$2$つ存在するとこになるからである.
+絶対にこのような問題を起きないようにするには,変数名を使用したラベルを作成する時に,特殊な記号を追加したりなどのプロトコルを実装する必要がある
+と考える.
+
+\subsection{yaccファイルで起きた還元競合}
+\subsubsection{還元競合1}
+\verb|lex|ファイルの\verb|assignment_stmt|において還元競合が起きてしまった.
+本来,$2$次元配列への代入は
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+IDENT L_BRACKET expression R_BRACKET L_BRACKET expression R_BRACKET ASSIGN expression SEMIC 
+\end{Verbatim}
+とする予定であったが,このようにすると還元競合が起きてしまった.
+これは\verb|var|における
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+IDENT L_BRACKET IDENT R_BRACKET
+\end{Verbatim}
+がexpressionに還元するのか,I
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+IDENT L_BRACKET expression（IDENT） R_BRACKET
+\end{Verbatim}
+に還元するのかがわからないので還元競合が起きたと考える.
+
+\subsubsection{還元競合2}
+本来,配列要素へ\verb|idents|で
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+|IDENT L_BRACKET IDENT R_BRACKET
+\end{Verbatim}
+とする予定であったが,このようにすると還元競合が起きてしまった.
+これはこの文が
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+idents L_BRACKET idents R_BRACKET
+\end{Verbatim}
+と還元するか
+\verb|idents|と還元するかの$2$択が生まれてしまうからであると考える.
+
+
+%--------------------------------------------------------------------%
+%\section{プログラムリストや得られた結果，および，その説明}
+
+
+%--------------------------------------------------------------------%
+%\section{プログラムの使用法}
+
+
+%--------------------------------------------------------------------%
+%\section{プログラムの作成過程や問題に関する考察}
+
+
+%--------------------------------------------------------------------%
+%\section{得られた結果に関する考察， あるいは設問に対する回答}
+
+
+%--------------------------------------------------------------------%
+\section{作成したプログラムのソースコード}
+% 参照を適切に直すか，記述を見直す必要がある．
+
+作成したプログラムを以下に添付する．
+なお，\ref{sec:abstract}章に示した課題については，
+\ref{xxxx}章で示したようにすべて正常に動作したことを付記しておく．
+
+% Verbatim environment
+% プリアンブルで \usepackage{fancyvrb} が必要．
+%   - numbers           行番号を表示．left なら左に表示．
+%   - xleftmargin       枠の左の余白．行番号表示用に余白を与えたい．
+%   - numbersep         行番号と枠の間隙 (gap)．デフォルトは 12 pt．
+%   - fontsize          フォントサイズ指定
+%   - baselinestretch   行間の大きさを比率で指定．デフォルトは 1.0．
+\begin{Verbatim}[numbers=left, xleftmargin=10mm, numbersep=6pt,
+                    fontsize=\small, baselinestretch=0.8]
+
+\end{Verbatim}
+
+%--------------------------------------------------------------------%
+% 参考文献
+%   以下は，書き方の例である．実際に，参考にした書籍等を見て書くこと．
+%   本文で引用する際は，\cite{book:algodata}などとすればよい．
+\begin{thebibliography}{99}
+  \bibitem{book:algodata} 平田富雄，アルゴリズムとデータ構造，森北出版，1990.
+  \bibitem{book:label2} 著者名，書名，出版社，発行年.
+  \bibitem{www:label3} WWWページタイトル，URL，アクセス日.
+\end{thebibliography}
+
+%--------------------------------------------------------------------%
+%% 本文はここより上に書く（\begin{document}～\end{document}が本文である）
+\end{document}
