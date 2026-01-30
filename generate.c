@@ -1,0 +1,916 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+int idents_num;
+int offset_count;
+
+int defined_num;
+int defining;
+
+int assined_num;
+int assing;
+
+int expressioning;
+int express_count;
+int express_call_count;//最初のEXPRESSON_ASTノードの時に0が代入され,そのノードの下のEXPRESSION_ASTノードで行きがけ時に+1,終了したら-1されていく.
+int total_express_count;
+
+int terming;
+int term_call_count;//最初のTERM_ASTノードの時に0が代入され,そのノードの下のTERM_ASTノードで行きがけ時に+1,終了したら-1されていく.
+int total_term_count;
+
+int whiling;
+int while_call_count;
+int total_while_count;
+int while_num;//while_call_countとは違い行きがけ順で数える.
+int exit_num;
+
+
+int conditionning;
+int condition_call_count;
+int cond_to_express;//行きがけ順
+//int total_condition_count;
+
+int using_if;
+int if_call_count;
+int total_if_count;
+int if_num;
+int end_num;
+int else_num;
+int else_end_num;
+
+int sp_offset;
+
+int first_is_caluculation;
+
+int ifOrWhile[100];
+int IWIdx;
+
+int express_mode;//0ならassignの最初の右辺はノードはtermのみかつtermの最初のノードはfactor　1なら加減乗除算あり
+
+int array2_flag;//not use
+int second_dim_num;
+
+int debug=0;
+int debug2 = 0;
+int debug3 = 0;
+
+struct ideNode{
+  char* name;
+  struct ideNode* next;
+  int offset;
+  int index;
+  char* ide_index;
+}*cur,*first,*cur_assign,*assign_first,*p;
+
+struct expressVar{
+  int haveNumber;
+  int number;
+  int offset;
+  int index;
+	char* ide_index;
+  struct expressVar* next;
+  struct expressVar* bef;
+}*cur_exp,*first_exp;
+
+
+struct ideNode* talloc();
+struct expressVar* exp_talloc();
+
+void gen_code(Node *n);
+
+void init_code(){
+	printf("\n");
+	printf("    INITIAL_GP = 0x10008000\n");
+	printf("    INITIAL_SP = 0x7ffffffc\n");
+	printf("    stop_service = 99\n");
+	printf("    .text\n");
+	printf("init:\n");
+	printf("    la $gp, INITIAL_GP\n");
+	printf("    la $sp, INITIAL_SP\n");
+	printf("    jal main\n");
+	printf("    nop\n");
+	printf("    li $v0, stop_service\n");
+	printf("    syscall\n");
+	printf("    nop\n");
+	printf("stop:\n");
+	printf("    j stop\n");
+	printf("    nop\n");
+	printf("    .text 0x00001000\n");
+	printf("main:\n");
+	printf("    la $t0, RESULT\n");
+
+}
+
+
+void turn_on_defin(Node* n) {
+    defining = 1;
+    if (n->number == -1) {}//define not array
+
+    else if (n->number == 1) {//array not define
+
+        int array_count = n->child->brother->number;
+        int id = 0;
+        while (array_count--) {
+            defined_num++;
+            struct ideNode* new = (struct ideNode*)malloc(sizeof(struct ideNode));
+            new->name = malloc(strlen(n->child->ident) + 1);
+            strcpy(new->name, n->child->ident);
+            new->offset = 4 * (offset_count++);
+
+            new->next = NULL;
+            new->index = id++;
+            cur->next = new;
+            cur = new;
+        }
+    }
+	else{
+        int array_count = n->number;
+        int id = 0;
+        while (array_count--) {
+            defined_num++;
+            struct ideNode* new = (struct ideNode*)malloc(sizeof(struct ideNode));
+            new->name = malloc(strlen(n->child->ident) + 1);
+            strcpy(new->name, n->child->ident);
+            new->offset = 4 * (offset_count++);
+
+            new->next = NULL;
+            new->index = id++;
+            cur->next = new;
+            cur = new;
+        }
+	}
+}
+
+void set_ideNode(struct ideNode *p,Node *n){
+        p->name = malloc(strlen(n->ident) + 1);//
+        strcpy(p->name, n->ident);//
+        p->next = NULL;//
+        p->offset = -1;//
+		p->ide_index=malloc(strlen(n->ideIdx) + 1);//
+		strcpy(p->ide_index, n->ideIdx);//
+}
+
+
+void turn_on_assign(Node * n) {
+    assined_num = 0;
+    assing = 1;
+    cur_assign = talloc();
+    cur_assign->name = NULL;
+    cur_assign->next = NULL;
+    cur_assign->offset = -1;
+    cur_assign->index = -1;
+ 
+    assign_first = cur_assign;
+
+
+    if (n->number == 1) {//a[1]
+        if (debug)printf("fefefefeeefe\n");
+        assing = 0;
+        assined_num = 1;
+		
+        struct ideNode* new_assign = talloc();
+		set_ideNode(new_assign,n->child);
+        new_assign->index = n->child->number;
+        cur_assign->next = new_assign;//
+        cur_assign = new_assign;//
+    }
+	if(n->number==2){
+        assing = 0;
+        assined_num = 1;
+        struct ideNode* new_assign = talloc();
+		set_ideNode(new_assign,n->child);
+        new_assign->index = 0;
+        cur_assign->next = new_assign;//
+        cur_assign = new_assign;//
+	}
+}
+
+void visit_express(Node* n) {
+    if (n->type == EXPRESSION_AST) {
+        total_express_count++;
+    }
+    if(n->child!=NULL)
+        visit_express(n->child);
+    if(n->brother!=NULL)
+        visit_express(n->brother);
+}
+
+void visit_term(Node* n) {
+    if (n->type == TERM_AST) {
+        total_term_count++;
+    }
+    if (n->child != NULL)
+        visit_term(n->child);
+    if (n->brother != NULL)
+        visit_term(n->brother);
+
+}
+
+void turn_on_term(Node* n) {
+    if (terming == 0) {
+        terming = 1;
+        term_call_count = 0;
+        total_term_count = 0;
+        visit_term(n->child);
+        if (debug2)printf("total_term_call_count=%d\n",total_term_count);
+        if (n->child->brother != NULL)express_mode = 1;
+    }
+
+}
+
+void turn_on_express(Node* n) {
+    if (expressioning == 0) {//expression_astの最初のノードだけ処理を行う.
+        express_count = 0;
+        express_call_count = 0;
+        expressioning = 1;
+        express_mode = 0;
+		sp_offset=8;
+        total_express_count = 0;
+        visit_express(n->child);
+        if (debug2)printf("total_express_call_count=%d\n", total_express_count);
+        if (n->child->brother != NULL){
+            express_mode = 1;//0->加減算ではない. 1->加減算がある.
+            if (debug)printf("has + or - expression\n");
+        }
+        if (express_mode == 1 && n->child->brother != NULL) {//戻ってきた時にスタックから値を取り出して計算を行う処理をする必要がある.
+            first_is_caluculation = 1;
+        }
+        else {
+            first_is_caluculation = 0;
+        }
+    }
+
+}
+
+void define_ident(Node* n){
+    defined_num++;
+    struct ideNode* new = talloc();
+	set_ideNode(new,n);
+    new->offset = 4 * (offset_count++);
+    new->index = -1;
+    cur->next = new;
+    cur = new;
+}
+
+void assign_ident(Node* n) {
+    assined_num++;
+    struct ideNode* new_assign = talloc();
+	set_ideNode(new_assign,n);
+    new_assign->index = -1;
+    cur_assign->next = new_assign;
+    cur_assign = new_assign;
+}
+
+void express_ident_offset(Node* n) {
+    struct expressVar* new_exp = exp_talloc();
+    new_exp->haveNumber = 0;
+    new_exp->number = 0;
+    struct ideNode* p_exp = first->next;
+    new_exp->offset = -1;
+    new_exp->index = -1;
+    if (n->number != -1)new_exp->index = n->number;//kazu
+
+    while (p_exp) {
+        if (strcmp(p_exp->name, n->ident) == 0 && new_exp->index == p_exp->index) {
+            new_exp->offset = p_exp->offset;
+            break;
+        }
+        p_exp = p_exp->next;
+    }    
+    new_exp->ide_index = malloc(strlen(n->ideIdx) + 1);
+    strcpy(new_exp->ide_index, n->ideIdx);
+    new_exp->bef = cur_exp;
+    cur_exp = new_exp;
+}
+
+void express_a_number(Node* n) {    
+    struct expressVar* new_exp = exp_talloc();
+    new_exp->haveNumber = 1;
+    new_exp->number = n->number;
+    new_exp->offset = -1;
+    new_exp->bef = cur_exp;
+    new_exp->ide_index = malloc(strlen("") + 1);
+    strcpy(new_exp->ide_index, "");
+    cur_exp = new_exp;
+}
+
+void calc_first_2dim_ind(Node *n){
+    if(n->type==IDENT_AST){
+        struct ideNode* tmp = first->next;
+        while (tmp) {
+            if (strcmp(tmp->name, n->ident) == 0) {
+                break;
+            }
+            tmp = tmp->next;
+        }
+        printf("#2ndim ident\n");
+        printf("    addi $t5,$t0,%d\n",tmp->offset);
+        printf("    lw $s6,0($t5)\n");
+        printf("    nop\n");
+    }
+    else{
+        printf("#2ndim number\n");
+        printf("    li $s6,%d\n",n->number);
+    }
+}
+
+void calc_second_2dim_ind(Node *n){
+    if(n->type==IDENT_AST){
+        struct ideNode* tmp = first->next;
+        while (tmp) {
+            if (strcmp(tmp->name, n->ident) == 0) {
+                break;
+            }
+            tmp = tmp->next;
+        }
+        printf("#2ndim ident\n");
+        printf("    addi $t5,$t0,%d\n",tmp->offset);
+        printf("    lw $s7,0($t5)\n");
+        printf("    nop\n");
+    }
+    else{
+        printf("#2ndim number\n");
+        printf("    li $s7,%d\n",n->number);
+    }
+}
+
+void calcurate_2dim_ind(Node* n,char* name){
+    int second_dim=second_dim_num;
+    int first_ind;//s6
+    int secont_ind;//s7
+    calc_first_2dim_ind(n->child);
+    calc_second_2dim_ind(n->child->brother);
+    printf("#second_dim_calucurate\n");
+    printf("    li $s5,%d\n",second_dim);
+    printf("    mult $s6,$s5\n");
+    printf("    mflo $s5\n");
+    printf("    nop\n");
+    printf("    li $s6,4\n");
+    printf("    mult $s7,$s6\n");
+    printf("    mflo $s7\n");
+    printf("    nop\n");
+    printf("    addi $s5,$s5,$s7\n");
+    printf("    addi $t6,$t6,$s5\n");
+}
+
+
+
+void assign_base(Node* n) {
+    p = assign_first->next;
+    struct ideNode* before;
+    struct ideNode* p_define;
+    free(assign_first);
+    while (p) {
+        if (debug)printf("offset=%d\n", cur_exp->offset);
+        if (express_mode == 0 && cur_exp->offset == -1) {
+            printf("#assigned %s \n", p->name);
+            printf("    li $v0,%d\n", cur_exp->number);//expリストの木の初期化をどうするか
+        }
+        else if (express_mode == 0 && cur_exp->offset != -1) {
+            printf("#assigned %s \n", p->name);
+                printf("    addi $t6,$t0,%d\n", cur_exp->offset);
+                if (strcmp(cur_exp->ide_index, "") != 0) {
+                    struct ideNode* tmp = first->next;
+                    while (tmp) {
+                        if (strcmp(tmp->name, cur_exp->ide_index) == 0) {
+                            break;
+                        }
+                        tmp = tmp->next;
+                    }
+                    printf("#index is ident\n");
+                    printf("    addi $t7,$t0,%d\n", tmp->offset);
+                    printf("    lw $t8,0($t7)\n");
+                    printf("    nop\n");
+					printf("    li $t7,4\n");
+					printf("    mult $t8,$t7\n");
+					printf("    mflo $t8\n");
+					printf("    nop\n");	
+                    printf("    add $t6,$t6,$t8\n");
+
+                }
+                printf("    lw $v0,0($t6)\n");
+        }
+        p_define = first->next;
+        while (p_define) {
+            if (strcmp(p_define->name, p->name) == 0 && (p_define->index == p->index)) {
+                p->offset = p_define->offset;
+            }
+            p_define = p_define->next;
+        }
+
+        printf("    addi $t6,$t0,%d\n", p->offset);
+        if (strcmp(p->ide_index, "") != 0) {
+            //printf("a[sum]\n");
+            struct ideNode* tmp = first->next;
+            while (tmp) {
+                if (strcmp(tmp->name, p->ide_index) == 0) {
+                    break;
+                }
+                tmp = tmp->next;
+            }
+            printf("#index is ident\n");
+            printf("    addi $t7,$t0,%d\n", tmp->offset);
+            printf("    lw $t8,0($t7)\n");
+            printf("    nop\n");
+			printf("    li $t7,4\n");
+			printf("    mult $t8,$t7\n");
+			printf("    mflo $t8\n");
+			printf("    nop\n");
+            printf("    add $t6,$t6,$t8\n");
+        }
+		if(n->exp_ind!=NULL){
+			calcurate_2dim_ind(n->exp_ind,p->name);
+
+		}
+
+        printf("#assign\n");
+        printf("    sw $v0, 0($t6)\n");
+        printf("    nop\n");
+        before = p;
+        p = p->next;
+        free(before);
+
+    }
+    if(express_mode==0)
+	    free(cur_exp);
+}
+
+void stack_ident(Node* n) {
+
+    if (express_mode==1&&defining==0&&expressioning==1) {
+
+		int ideOffset=-1;
+		struct ideNode* p_exp = first->next;//express_ident_offsetなどにもある,offsetの検索は1つの関数にまとめたほうが良い.
+        while (p_exp) {
+            if (strcmp(p_exp->name, n->ident) == 0 && p_exp->index == n->number) {
+                ideOffset = p_exp->offset;
+                break;
+            }
+            p_exp = p_exp->next;
+        }
+
+        printf("#stack ident\n");
+        printf("    addi $t6,$t0,%d\n",ideOffset);
+        if (strcmp(n->ideIdx, "") != 0) {
+            //printf("a[sum]\n");
+            struct ideNode* tmp = first->next;
+            int ideFlag = 0;
+            while (tmp) {
+                if (strcmp(tmp->name, n->ideIdx) == 0) {
+                    ideFlag = 1;
+                    break;
+                }
+                tmp = tmp->next;
+            }
+            if (!ideFlag) {
+                printf("not valuable index\n");
+                exit(0);
+            }
+            printf("#index isindent\n");
+            printf("    addi $t7,$t0,%d\n", tmp->offset);
+            printf("    lw $t8,0($t7)\n");
+            printf("    nop\n");
+		    printf("    li $t7,4\n");
+			printf("    mult $t8,$t7\n");
+			printf("    mflo $t8\n");
+			printf("    nop\n");			
+            printf("    add $t6,$t6,$t8\n");
+        }
+        printf("    lw $t1,0($t6)\n");
+        printf("    nop\n");
+        printf("    sw $t1,%d($sp)\n",sp_offset);
+		sp_offset+=4;
+    }
+}
+
+void stack_number(Node* n) {
+    if (express_mode == 1) {
+        printf("#stack number\n");
+        printf("    li $t1,%d\n",n->number);
+        printf("    nop\n");
+        printf("    sw $t1,%d($sp)\n",sp_offset);
+		sp_offset+=4;
+    }
+}
+
+void add_node(){
+                printf("#addition\n");
+				sp_offset-=4;
+                printf("    lw $t3,%d($sp)\n",sp_offset);
+				sp_offset-=4;
+                printf("    lw $t5,%d($sp)\n",sp_offset);
+				printf("    nop\n");
+                printf("    add $v0,$t3,$t5\n");
+
+				if(express_call_count!=total_express_count){//express_call_countを0にする前に行う.
+					printf("    sw $v0,%d($sp)\n",sp_offset);
+					sp_offset+=4;
+					}
+				else if(array2_flag==1) {
+		             printf("    addi $s6,$v0,0\n");
+	            }
+                //まだ計算を行うならばv0をスタックに入れてリストにも入れる.そうでないなら終わり.
+}
+
+void sub_node(){
+	printf("#subtraction\n");
+	sp_offset-=4;
+    printf("    lw $t5,%d($sp)\n",sp_offset);
+	sp_offset-=4;
+    printf("    lw $t3,%d($sp)\n",sp_offset);
+	printf("    nop\n");
+    printf("    sub $v0,$t3,$t5\n");
+
+	if(express_call_count!=total_express_count){//express_call_countを0にする前に行う.
+		printf("    sw $v0,%d($sp)\n",sp_offset);
+		sp_offset+=4;
+	}	else if(array2_flag==1) {
+		printf("    addi $s6,$v0,0\n");
+	}
+
+}
+
+void mul_node(){
+	printf("#multiplication\n");
+	printf("    nop\n");
+	sp_offset-=4;
+	printf("    lw $t3,%d($sp)\n",sp_offset);
+	sp_offset-=4;
+	printf("    lw $t5,%d($sp)\n",sp_offset);
+	printf("    nop\n");
+	printf("    mult $t3,$t5\n");
+	printf("    nop\n");
+	printf("    mflo $v0\n");
+	if(debug)printf("at mul_node term_call_count=%d\n",term_call_count);
+	if(term_call_count != total_term_count || express_call_count != total_express_count||first_is_caluculation) {//express_call_countを0にする前に行う.
+		printf("    sw $v0,%d($sp)\n",sp_offset);
+		sp_offset+=4;
+	 }
+	else if(array2_flag==1){
+		printf("    addi $s6,$v0,0\n");
+	}
+	
+}
+
+void div_node(){
+	printf("#divide\n");
+	printf("    nop\n");
+	sp_offset-=4;
+	printf("    lw $t5,%d($sp)\n",sp_offset);
+	sp_offset-=4;
+	printf("    lw $t3,%d($sp)\n",sp_offset);
+	printf("    nop\n");
+	printf("    div $t3,$t5\n");
+	printf("    nop\n");
+	printf("    mflo $v0\n");
+	if(term_call_count != total_term_count || express_call_count != total_express_count||first_is_caluculation) {//express_call_countを0にする前に行う.
+		printf("    sw $v0,%d($sp)\n",sp_offset);
+		sp_offset+=4;
+	}
+	else if(array2_flag==1){
+		printf("    addi $s6,$v0,0\n");
+	}
+	
+}
+
+void visit_while(Node* n) {
+    if (n->type == LOOP_STMT_AST) {
+        total_while_count++;
+    }
+    if (n->child != NULL)
+        visit_while(n->child);
+    if (n->brother != NULL)
+        visit_while(n->brother);
+
+}
+
+void visit_if(Node* n) {
+    if (n->type == COND_STMT_AST) {
+        total_if_count++;
+    }
+    if (n->child != NULL)
+        visit_if(n->child);
+    if (n->brother != NULL)
+        visit_if(n->brother);
+
+}
+
+void turn_on_loop(Node *n){
+	if(whiling==0){
+		whiling=1;
+		while_call_count=0;
+		total_while_count=0;
+        exit_num = 0;
+		visit_while(n->child);
+	}
+	ifOrWhile[IWIdx++]=2;
+    printf("WHILE%d:\n", while_num++);
+}
+
+
+void turn_on_condition(){
+	if(conditionning==0){
+		conditionning=1;
+		condition_call_count=0;//0から初めて最大2
+        cond_to_express = 0;
+	}
+}
+
+void turn_on_if(Node* n) {
+    if (using_if == 0) {
+        using_if = 1;
+        //if_num = 0;
+        end_num = 0;
+        if_call_count = 0;
+        total_if_count = 0;
+        visit_if(n->child);
+    }
+	ifOrWhile[IWIdx++]=1;
+    printf("#IF%d\n", if_num++);
+}
+
+
+void gen_code(Node *n) { 
+  
+    switch (n->type) {
+    case DECL_STATEMENT_AST://DECL_STATEMENT_ASTのナンバーが-1ならdefine　1ならarray
+        turn_on_defin(n);
+        break;
+
+
+    case ASSIGNMENT_STMT_AST://ASSIGNMENT_STMT_ASTノードのnumberが1なら配列要素そうでないならidents
+        turn_on_assign(n);
+        break;
+
+    case TERM_AST:
+        turn_on_term(n);
+        break;
+
+
+    case EXPRESSION_AST:
+        turn_on_express(n);
+        break;
+
+    case LOOP_STMT_AST:
+        turn_on_loop(n);
+        break;
+
+    case CONDITION_AST:
+        turn_on_condition();
+        break;
+
+    case COND_STMT_AST:
+        turn_on_if(n);
+        break;
+    }
+	 	
+    if (n->child != NULL) { //child node process
+        gen_code(n->child); 
+    }
+
+    switch (n->type) {
+    case DECL_STATEMENT_AST://define not array
+
+        defining = 0;
+        break;
+
+    case ASSIGNMENT_STMT_AST:
+        assing = 0;
+        break;
+
+
+    case EXPRESSION_AST:
+        if (express_mode == 1 && n->child->brother != NULL) {//戻ってきた時にスタックから値を取り出して計算を行う処理をする必要がある.
+
+            if (n->child->brother->child->type == ADD_AST) {
+                add_node();
+            }
+            else {
+                sub_node();
+            }
+        }
+
+
+        if (express_call_count == total_express_count) {//問題あり,->修正
+            expressioning = 0;
+            if (conditionning == 1) {//expressionの結果をそれぞれなにかのレジスタに入れてconditionノードで比較に使いたい.
+                if (express_mode == 0) {
+                    if (cur_exp->offset == -1) {
+                        printf("#numer condition\n");
+                        printf("    li $s%d,%d\n", cond_to_express, cur_exp->number);//expリストの木の初期化をどうするか
+                        free(cur_exp);
+                    }
+                    else if (cur_exp->offset != -1) {
+                        printf("#ident condition \n");
+                        printf("    addi $t6,$t0,%d\n", cur_exp->offset);
+                        printf("    lw $s%d,0($t6)\n", cond_to_express );
+						printf("    nop\n");
+                        free(cur_exp);
+                    }
+
+                }
+                else
+                {
+                    printf("    addi $s%d,$v0,0\n", cond_to_express);
+                }
+
+                if (cond_to_express == 1)cond_to_express = 0;
+                else
+                {
+                    cond_to_express++;
+                }
+            }
+        }
+        else {
+            express_call_count++;//訪問し終わったら足す
+        }
+        break;
+
+
+    case TERM_AST:
+        if (express_mode == 1 && n->child->brother != NULL) {
+            if (n->child->brother->child->type == MUL_AST) {
+                mul_node();
+            }
+            else {
+                div_node();
+            }
+        }
+        if (term_call_count == total_term_count) {//最初のTERMを抜けたら終了
+            terming = 0;
+			//printf("term ends\n");
+        }
+        else
+        {
+            term_call_count++;//訪問し終わったら足す
+            if (debug)printf("Re term_call_count=%d\n", term_call_count);
+
+        }
+        break;
+
+    case IDENT_AST:
+        stack_ident(n);
+        break;
+
+    case NUMBER_AST:
+        stack_number(n);
+        break;
+    case CONDITION_AST:
+        conditionning = 0;
+		IWIdx--;
+        if (whiling == 1&&ifOrWhile[IWIdx]==2) {
+            switch (n->child->brother->child->type) {
+            case EQ_AST:
+                printf("    bne $s0,$s1,EXIT%d\n",while_num-1);
+                printf("    nop\n");
+                break;
+
+            case GT_AST://t10>t11
+                printf("    slt $s2,$s1,$s0\n");
+                printf("    bne $s2,$zero,EXIT%d\n",while_num-1);
+                printf("    nop\n");
+                break;
+
+            case LT_AST://t10<t11
+                printf("    slt $s2,$s0,$s1\n");
+                printf("    beq $s2,$zero,EXIT%d\n", while_num-1);
+                printf("    nop\n");
+                break;
+
+            case GT_OR_EQ_AST:
+                printf("    slt $s2,$s0,$s1\n");
+                printf("    beq $s2,$zero,EXIT%d\n",while_num-1);
+                printf("    nop\n");
+                break;
+
+            case LT_OR_EQ_AST:
+                printf("    slt $s2,$s1,$s0\n");
+                printf("    bne $s2,$zero,EXIT%d\n",while_num-1);
+                printf("    nop\n");
+                break;
+
+            }
+        }
+        else if (using_if == 1&&ifOrWhile[IWIdx]==1) {
+            switch (n->child->brother->child->type) {
+            case EQ_AST:
+                printf("    bne $s0,$s1,IF_END%d\n",if_num-1);//if_num-end_num-1
+                printf("    nop\n");
+                break;
+
+            case GT_AST://t10>t11
+                printf("    slt $s2,$s1,$s0\n");
+                printf("    bne $s2,$zero,IF_END%d\n",if_num-1);
+                printf("    nop\n");
+                break;
+
+            case LT_AST://t10<t11
+                printf("    slt $s2,$s0,$s1\n");
+                printf("    bne $s2,$v0,IF_END%d\n",if_num-1);
+                printf("    nop\n");
+                break;
+
+            case GT_OR_EQ_AST:
+                printf("    slt $s2,$s0,$s1\n");
+                printf("    beq $s2,$zero,IF_END%d\n",if_num-1);
+                printf("    nop\n");
+                break;
+
+            case LT_OR_EQ_AST:
+                printf("    slt $s2,$s1,$s0\n");
+                printf("    beq $s2,$zero,IF_END%d\n", if_num-1);
+                printf("    nop\n");
+                break;
+
+            }
+        }
+        break;
+
+    case LOOP_STMT_AST:
+        exit_num++;
+        printf("    j WHILE%d\n",while_num-exit_num);
+        printf("    nop\n");
+        printf("EXIT%d:\n",while_num-exit_num);
+        if (while_call_count == total_while_count) {//termやexpressionとは違い,
+            whiling = 0;
+        }
+        else {
+            while_call_count++;
+        }
+        break;
+
+    case ELIF_STMT_AST:
+        end_num++;
+		else_num++;
+        printf("    j ELSE_END%d\n", else_num-1);
+        printf("    nop\n");
+        printf("IF_END%d:\n",if_num- 1);
+        break;
+
+    case COND_STMT_AST:
+        if (n->child->type == ELIF_STMT_AST) {
+
+			else_end_num++;
+            printf("ELSE_END%d:\n",else_num-else_end_num);
+        }
+        else {
+	    end_num++;
+            printf("IF_END%d:\n", if_num-end_num);
+	    //end_num++;
+        }
+        
+       
+        if (if_call_count == total_if_count) {
+            using_if = 0;
+        }
+        else {
+            if_call_count++;
+        }
+        break;
+    }
+
+
+    if (n->brother != NULL) { //child node process2
+        gen_code(n->brother); 
+    }
+
+    
+    switch (n->type) {
+    case IDENT_AST:
+        if (defining == 1) {
+            define_ident(n);
+        }
+       
+        if (assing == 1 && expressioning == 0) {
+            assign_ident(n);
+        }
+
+        if (expressioning == 1&&express_mode==0) {
+            if (debug)printf("has IDENT\n");
+            express_ident_offset(n);
+        }
+        break;
+
+    case NUMBER_AST:
+        if (expressioning == 1&&express_mode==0) {
+            express_a_number(n);
+        }
+        break;
+
+
+    case ASSIGNMENT_STMT_AST://ASSIGNMENT_STMT_AST
+        assign_base(n);
+        break;
+
+    }
+
+}
+
+struct ideNode* talloc(){
+	return (struct ideNode*)malloc(sizeof(struct ideNode));
+}
+
+struct expressVar* exp_talloc(){
+	return (struct expressVar*)malloc(sizeof(struct expressVar));
+}
